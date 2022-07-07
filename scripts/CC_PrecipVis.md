@@ -1,10 +1,12 @@
 California Precipitation Visualizations
 ================
 Corey Clatterbuck
-2022-07-01
+2022-07-07
 
-This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you
-execute code within the notebook, the results appear beneath the code.
+This is an [R Markdown](http://rmarkdown.rstudio.com) file with
+github_document as the yaml output. When you execute code within the
+.Rmd, the results appear beneath the code. I knit the .Rmd to a .md file
+so that the file renders appropriately in the GitHub repo.
 
 ## Load & reformat
 
@@ -14,6 +16,7 @@ First we load packages, the raw data, and re-format the data.
 library(here)
 library(tidyverse)
 library(janitor)
+library(ggnewscale)
 
 dataset <- read_csv(here("data", "4-pcp-all-1-1895-2022.csv"), skip = 4, show_col_types = FALSE)
 dataset$Date <- format(lubridate::parse_date_time(dataset$Date, orders = c("ym")), "%m-%Y") 
@@ -118,3 +121,99 @@ ggplot(chunk3, aes(x = WaterMonth, y = csum_wyear)) +
 ```
 
 ![](CC_PrecipVis_files/figure-gfm/unnamed-chunk-3-1.png)<!-- -->
+
+### Additional requested edits
+
+I won’t go through all of the suggested changes from our Teams chat (see
+the ReadMe for details), but I will add some of the suggested changes,
+including:
+
+-   calculate & plot the mean & 95% confidence interval (assuming normal
+    distribution)
+
+-   highlight the current year
+
+-   citing data sources
+
+-   labeling the x-axis (already completed in above chunks)
+
+We’ll do this within the water year. I still need to futz more with the
+legend appearance re: mean & confidence interval, but I think this is
+decent.
+
+``` r
+colnames(chunk3)
+```
+
+    ## [1] "Month"      "Year"       "Value"      "Anomaly"    "WaterYear" 
+    ## [6] "WaterMonth" "csum_wyear"
+
+``` r
+## calculate mean & 95% CI over all years
+CIs <- chunk3 %>%
+  group_by(WaterMonth) %>%
+  summarise(mean.precip = mean(csum_wyear, na.rm = TRUE),
+            sd.precip = sd(csum_wyear, na.rm = TRUE),
+            n.precip = n()) %>%
+  mutate(se.precip = sd.precip / sqrt(n.precip),
+         lower.ci.precip = mean.precip - qt(1 - (0.05 / 2), n.precip - 1) * se.precip,
+         upper.ci.precip = mean.precip + qt(1 - (0.05 / 2), n.precip - 1) * se.precip) %>%
+  dplyr::select(WaterMonth, mean.precip, lower.ci.precip, upper.ci.precip)
+
+
+## find and subset the current year, wettest year, driest year. 
+chunk3 %>%
+  dplyr::filter(WaterMonth == "9") %>% ## find driest & wettest
+  arrange(csum_wyear) %>%
+  slice(c(1,n()))
+```
+
+    ## # A tibble: 2 × 7
+    ##   Month  Year Value Anomaly WaterYear WaterMonth csum_wyear
+    ##   <dbl> <dbl> <dbl>   <dbl>     <dbl> <fct>           <dbl>
+    ## 1     9  1924  0.14   -0.28      1924 9                9.94
+    ## 2     9  1983  0.91    0.49      1983 9               40.4
+
+``` r
+years_needed <- chunk3 %>%
+  dplyr::filter(WaterYear == 1924 |
+                  WaterYear == 1983 |
+                  WaterYear == 2022)
+  
+
+## plot
+ggplot(CIs, aes(x=WaterMonth, y=mean.precip, group = 1)) +
+   geom_line(aes(color="navy"), size=1, alpha=0.8) +
+   geom_ribbon(aes(ymin=lower.ci.precip, ymax=upper.ci.precip, fill = "blue"), alpha=0.2) +
+  scale_fill_manual("",values=alpha("blue", 0.2), labels = "95% CI") +
+  scale_color_manual("",values="navy",labels = "mean (n=127)") +
+  new_scale_color() +
+  geom_line(data=years_needed, 
+            aes(x=WaterMonth, y=csum_wyear,
+                group=WaterYear, color = as.factor(WaterYear)),
+             size = 1) +
+  scale_color_manual("Water Year", 
+                     values=c("darkgoldenrod1","darkolivegreen3","black"), 
+                     labels = c("driest","wettest","current (2022)")) +
+  labs(x = "Month, numeric", 
+       y = "Precipitation (in), cumulative sum",
+       title = "Statewide Precipitation in California, 1895-current",
+       subtitle = "Data from https://www.ncei.noaa.gov/") +
+  guides(color=guide_legend(title="Water Year")) +
+  theme_minimal()
+```
+
+![](CC_PrecipVis_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
+
+``` r
+## without average legend
+# ggplot(CIs, aes(x=WaterMonth, y=mean.precip, group = 1)) +
+#    geom_line(size=1, alpha=0.8, col="navy") +
+#    geom_ribbon(aes(ymin=lower.ci.precip, ymax=upper.ci.precip), fill="blue", alpha=0.2) +
+#    geom_line(data=years_needed, aes(x=WaterMonth, y=csum_wyear,
+#                                     group=WaterYear, color = as.factor(WaterYear))) +
+#   labs(x = "Month, numeric", y = "Precipitation (in), cumulative sum") +
+#   guides(color=guide_legend(title="Water Year"),
+#          fill=guide_legend(title="Mean (n=127)")) +
+#   theme_bw()
+```
