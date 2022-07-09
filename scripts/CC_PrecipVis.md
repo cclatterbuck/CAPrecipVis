@@ -1,7 +1,7 @@
 California Precipitation Visualizations
 ================
 Corey Clatterbuck
-2022-07-07
+2022-07-08
 
 This is an [R Markdown](http://rmarkdown.rstudio.com) file with
 github_document as the yaml output. When you execute code within the
@@ -16,7 +16,7 @@ First we load packages, the raw data, and re-format the data.
 library(here)
 library(tidyverse)
 library(janitor)
-library(ggnewscale)
+library(scales)
 
 dataset <- read_csv(here("data", "4-pcp-all-1-1895-2022.csv"), skip = 4, show_col_types = FALSE)
 dataset$Date <- format(lubridate::parse_date_time(dataset$Date, orders = c("ym")), "%m-%Y") 
@@ -160,8 +160,14 @@ CIs <- chunk3 %>%
          upper.ci.precip = mean.precip + qt(1 - (0.05 / 2), n.precip - 1) * se.precip) %>%
   dplyr::select(WaterMonth, mean.precip, lower.ci.precip, upper.ci.precip)
 
+Means <- CIs %>% ## make separate df to aid binding columns
+  dplyr::select(WaterMonth, mean.precip) %>%
+  mutate(WaterYear = "mean") %>%
+  relocate(WaterYear) %>%
+  rename(csum_wyear = mean.precip)
 
-## find and subset the current year, wettest year, driest year. 
+
+## find the current year, wettest year, driest year. 
 chunk3 %>%
   dplyr::filter(WaterMonth == "9") %>% ## find driest & wettest
   arrange(csum_wyear) %>%
@@ -175,45 +181,38 @@ chunk3 %>%
     ## 2     9  1983  0.91    0.49      1983 9               40.4
 
 ``` r
+## subset the years above & bind the mean data
 years_needed <- chunk3 %>%
   dplyr::filter(WaterYear == 1924 |
                   WaterYear == 1983 |
-                  WaterYear == 2022)
-  
+                  WaterYear == 2022) %>%
+  dplyr::select(WaterYear, WaterMonth, csum_wyear) %>%
+  mutate(WaterYear = as.character(WaterYear)) %>%
+  bind_rows(., Means)
+
+
+## add nice colors for plot
+mycols <- c("#E69512", "#3A5D3D", "#D3105C", "#4C4976") ## from palette "superbloom3", github.com/an-bui/calecopal
+# show_col(mycols) ## Uncomment & run to view a grid of the above colors
+
 
 ## plot
-ggplot(CIs, aes(x=WaterMonth, y=mean.precip, group = 1)) +
-   geom_line(aes(color="navy"), size=1, alpha=0.8) +
-   geom_ribbon(aes(ymin=lower.ci.precip, ymax=upper.ci.precip, fill = "blue"), alpha=0.2) +
-  scale_fill_manual("",values=alpha("blue", 0.2), labels = "95% CI") +
-  scale_color_manual("",values="navy",labels = "mean (n=127)") +
-  new_scale_color() +
-  geom_line(data=years_needed, 
-            aes(x=WaterMonth, y=csum_wyear,
-                group=WaterYear, color = as.factor(WaterYear)),
-             size = 1) +
-  scale_color_manual("Water Year", 
-                     values=c("darkgoldenrod1","darkolivegreen3","black"), 
-                     labels = c("driest","wettest","current (2022)")) +
+try1 <- ggplot() +
+  geom_line(data=years_needed, aes(x=WaterMonth, y=csum_wyear, group = WaterYear, color = as.factor(WaterYear)), size = 2) +
+  scale_color_manual("Water Year",
+                     values = mycols,
+                     labels = c("driest (1924)", "wettest (1983)", "current (2022)", paste("mean ", " 95% CI", sep = "\u00B1"))) +
   labs(x = "Month, numeric", 
        y = "Precipitation (in), cumulative sum",
        title = "Statewide Precipitation in California, 1895-current",
-       subtitle = "Data from https://www.ncei.noaa.gov/") +
-  guides(color=guide_legend(title="Water Year")) +
+       subtitle = "Data from https://www.ncei.noaa.gov/",
+       color = NULL) +
   theme_minimal()
+
+try1 + geom_ribbon(data = CIs, aes(x = WaterMonth, ymin=lower.ci.precip, ymax=upper.ci.precip, fill = "CI", group = 1), alpha = 0.3) +
+  scale_fill_manual(name = "Test",
+                    values = c("CI" = "#6C91BD"),
+                    guide = "none")
 ```
 
 ![](CC_PrecipVis_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
-
-``` r
-## without average legend
-# ggplot(CIs, aes(x=WaterMonth, y=mean.precip, group = 1)) +
-#    geom_line(size=1, alpha=0.8, col="navy") +
-#    geom_ribbon(aes(ymin=lower.ci.precip, ymax=upper.ci.precip), fill="blue", alpha=0.2) +
-#    geom_line(data=years_needed, aes(x=WaterMonth, y=csum_wyear,
-#                                     group=WaterYear, color = as.factor(WaterYear))) +
-#   labs(x = "Month, numeric", y = "Precipitation (in), cumulative sum") +
-#   guides(color=guide_legend(title="Water Year"),
-#          fill=guide_legend(title="Mean (n=127)")) +
-#   theme_bw()
-```
